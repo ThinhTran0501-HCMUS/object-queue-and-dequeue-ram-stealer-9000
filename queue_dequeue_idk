@@ -1,0 +1,151 @@
+
+#define TOTAL_RAM 2048.0   // ATmega128 = 4096
+
+
+const int buttonPins[3] = {2, 3, 4};
+const int ledPins[3]    = {8, 9, 10};
+const int triggerButton = 5;
+
+
+struct Node {
+  int value;   // button number (1-3)
+  int id;      // object number
+  Node* next;
+};
+
+Node* front = NULL;
+Node* rear  = NULL;
+
+// Object counter
+int objectCounter = 0;
+
+
+int freeRAM() {
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+}
+
+void printRAM() {
+  int free = freeRAM();
+
+  float kb = free / 1024.0;
+  float percent = (free / TOTAL_RAM) * 100.0;
+
+  Serial.print("Free RAM: ");
+  Serial.print(free);
+  Serial.print(" bytes (");
+  Serial.print(kb, 2);
+  Serial.print(" KB, ");
+  Serial.print(percent, 1);
+  Serial.println("%)");
+}
+
+
+void enqueue(int val) {
+  Node* newNode = new Node;
+
+  objectCounter++;         
+  newNode->id = objectCounter;
+  newNode->value = val;
+  newNode->next = NULL;
+
+  if (rear == NULL) {
+    front = rear = newNode;
+  } else {
+    rear->next = newNode;
+    rear = newNode;
+  }
+
+  Serial.print("Enqueued Object #");
+  Serial.print(newNode->id);
+  Serial.print(" (Button ");
+  Serial.print(val);
+  Serial.println(")");
+
+  printRAM();
+}
+
+int dequeue() {
+  if (front == NULL) return -1;
+
+  Node* temp = front;
+
+  int val = temp->value;
+  int id  = temp->id;
+
+  front = front->next;
+  if (front == NULL) rear = NULL;
+
+  delete temp;
+
+  Serial.print("Dequeued Object #");
+  Serial.print(id);
+  Serial.print(" (Button ");
+  Serial.print(val);
+  Serial.println(")");
+
+  printRAM();
+
+  return val;
+}
+
+bool isEmpty() {
+  return (front == NULL);
+}
+
+
+bool lastButtonState[3] = {HIGH, HIGH, HIGH};
+bool lastTriggerState = HIGH;
+
+void setup() {
+  for (int i = 0; i < 3; i++) {
+    pinMode(buttonPins[i], INPUT_PULLUP);
+    pinMode(ledPins[i], OUTPUT);
+    digitalWrite(ledPins[i], LOW);
+  }
+
+  pinMode(triggerButton, INPUT_PULLUP);
+
+  Serial.begin(9600);
+  Serial.println("System Ready");
+  printRAM();
+}
+
+
+void loop() {
+  for (int i = 0; i < 3; i++) {
+    bool currentState = digitalRead(buttonPins[i]);
+
+    if (lastButtonState[i] == HIGH && currentState == LOW) {
+      enqueue(i + 1);
+      delay(50);
+    }
+
+    lastButtonState[i] = currentState;
+  }
+
+  bool triggerState = digitalRead(triggerButton);
+
+  if (lastTriggerState == HIGH && triggerState == LOW) {
+    Serial.println("Processing queue...");
+
+    while (!isEmpty()) {
+      int val = dequeue();
+
+      if (val >= 1 && val <= 3) {
+        int ledIndex = val - 1;
+
+        digitalWrite(ledPins[ledIndex], HIGH);
+        delay(500);
+        digitalWrite(ledPins[ledIndex], LOW);
+        delay(200);
+      }
+    }
+
+    Serial.println("Queue empty.");
+    printRAM();
+  }
+
+  lastTriggerState = triggerState;
+}
